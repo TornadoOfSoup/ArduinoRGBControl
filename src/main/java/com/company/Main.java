@@ -9,8 +9,6 @@ import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.PrintWriter;
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Scanner;
 
 public class Main {
@@ -21,6 +19,8 @@ public class Main {
 
     static SerialPort port;
     static PrintWriter output;
+
+    static Thread programThread;
 
     public static void main(String[] args) {
         JFrame frame = new JFrame();
@@ -79,11 +79,13 @@ public class Main {
         JPanel programPanel = new JPanel();
         JButton runProgramButton = new JButton("Run Program");
         final JTextArea programArea = new JTextArea(15, 45);
+        JScrollPane scrollPane = new JScrollPane(programArea, JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
 
-        programPanel.add(programArea);
+        //programPanel.add(programArea);
+        programPanel.add(scrollPane);
         programPanel.add(runProgramButton);
         programFrame.add(programPanel);
-        programFrame.setName("Program Writer");
+        programFrame.setTitle("Program Writer");
 
         programFrame.pack();
 
@@ -92,17 +94,20 @@ public class Main {
 
         */
         SerialPort[] ports = SerialPort.getCommPorts();
-        int i = 1;
-        System.out.println("Select a port: ");
-        for (SerialPort port : ports) {
-            System.out.println(i + ". " + port.getSystemPortName());
-            i++;
+        int chosenPortIndex = 0;
+        if (ports.length > 1) {
+            int i = 1;
+            System.out.println("Select a port: ");
+            for (SerialPort port : ports) {
+                System.out.println(i + ". " + port.getSystemPortName());
+                i++;
+            }
+
+            Scanner s = new Scanner(System.in);
+            chosenPortIndex = s.nextInt() - 1;
         }
 
-        Scanner s = new Scanner(System.in);
-        int chosenPortIndex = s.nextInt();
-
-        port = ports[chosenPortIndex - 1];
+        port = ports[chosenPortIndex];
         if (port.openPort()) {
             System.out.println("Port opened");
         } else {
@@ -132,7 +137,7 @@ public class Main {
 
         rSlider.addChangeListener(new ChangeListener() {
             public void stateChanged(ChangeEvent e) {
-                rLabel.setText("R: " + rSlider.getValue());
+                rLabel.setText(String.format("R: %3d", rSlider.getValue()));
                 System.out.println("Printing: " + formatRGBString(rSlider.getValue(), gSlider.getValue(), bSlider.getValue()));
                 sendColor(formatRGBString(rSlider.getValue(), gSlider.getValue(), bSlider.getValue()));
             }
@@ -140,7 +145,7 @@ public class Main {
 
         gSlider.addChangeListener(new ChangeListener() {
             public void stateChanged(ChangeEvent e) {
-                gLabel.setText("G: " + gSlider.getValue());
+                gLabel.setText(String.format("G: %3d", gSlider.getValue()));
                 System.out.println("Printing: " + formatRGBString(rSlider.getValue(), gSlider.getValue(), bSlider.getValue()));
                 sendColor(formatRGBString(rSlider.getValue(), gSlider.getValue(), bSlider.getValue()));
             }
@@ -148,7 +153,7 @@ public class Main {
 
         bSlider.addChangeListener(new ChangeListener() {
             public void stateChanged(ChangeEvent e) {
-                bLabel.setText("B: " + bSlider.getValue());
+                bLabel.setText(String.format("B: %3d", bSlider.getValue()));
                 System.out.println("Printing: " + formatRGBString(rSlider.getValue(), gSlider.getValue(), bSlider.getValue()));
                 sendColor(formatRGBString(rSlider.getValue(), gSlider.getValue(), bSlider.getValue()));
             }
@@ -163,49 +168,23 @@ public class Main {
         runProgramButton.addActionListener(new ActionListener() {
             public void actionPerformed(ActionEvent e) {
                 final String[] lines = programArea.getText().split("\n");
-                System.out.println(programArea.getText());
 
-                if (lines[0].trim().equals("loop")) {
-                    System.out.println("looping");
-                    new Thread() {
-                        @Override
-                        public void run() {
-                            while (true) {
-                                for (String line : lines) {
-                                    System.out.println("PARSING: " + line);
-                                    parseProgramCode(line);
-                                }
-                            }
-                        }
-                    }.run();
-
-                } else if (lines[0].startsWith("loop")) {
-                    final int numOfTimes = Integer.parseInt(lines[0].replace("loop", "").trim());
-                    System.out.println("looping " + numOfTimes + " times");
-                    new Thread() {
-                        @Override
-                        public void run() {
-                            int x = 0;
-                            while (x < numOfTimes) {
-                                for (String line : lines) {
-                                    System.out.println("PARSING: " + line);
-                                    parseProgramCode(line);
-                                    x++;
-                                }
-                            }
-                        }
-                    }.run();
-                } else {
-                    new Thread() {
-                        @Override
-                        public void run() {
-                            for (String line : lines) {
-                                System.out.println("PARSING: " + line);
-                                parseProgramCode(line);
-                            }
-                        }
-                    }.run();
+                if (programThread != null) {
+                    programThread.interrupt();
                 }
+                programThread = new Thread() {
+                    @Override
+                    public void run() {
+                        try {
+                            parseProgram(lines);
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                            return;
+                        }
+                    }
+                };
+
+                programThread.start();
             }
         });
 
@@ -246,20 +225,201 @@ public class Main {
         return rgb[0] + " " + rgb[1] + " " + rgb[2];
     }
 
+    public static String hexToRGB(String hexString) {
+        Color c = Color.decode(hexString);
+        int r = c.getRed();
+        int g = c.getGreen();
+        int b = c.getBlue();
+
+        return formatRGBString(r, g, b);
+    }
+
     public static void sendColor(String rgbString) {
         output.print(rgbString);
         output.flush();
     }
 
-    public static void parseProgramCode(String line) {
-        if (line.startsWith("sleep")) {
+    public static void sendColor(Color color) {
+        output.print(colorToRGBString(color));
+        output.flush();
+    }
+
+    public static String colorToRGBString(Color color) {
+        int r = color.getRed();
+        int g = color.getGreen();
+        int b = color.getBlue();
+
+        return formatRGBString(r, g, b);
+    }
+
+    public static void parseProgram (final String[] lines) throws InterruptedException {
+        if (lines[0].trim().equalsIgnoreCase("loop")) {
+            System.out.println("looping");
+            new Thread() {
+                @Override
+                public void run() {
+                    while (true) {
+                        for (String line : lines) {
+                            System.out.println("PARSING: " + line);
+                            parseProgramLine(line);
+                        }
+                    }
+                }
+            }.start();
+
+        } else if (lines[0].startsWith("loop")) { //TODO add a way to loop parts of the code
+            final int numOfTimes = Integer.parseInt(lines[0].replace("loop", "").trim());
+            System.out.println("looping " + numOfTimes + " times");
+            new Thread() {
+                @Override
+                public void run() {
+                    int x = 0;
+                    while (x < numOfTimes) {
+                        for (String line : lines) {
+                            System.out.println("PARSING: " + line);
+                            parseProgramLine(line);
+                        }
+                        x++;
+                    }
+                }
+            }.start();
+        } else {
+            new Thread() {
+                @Override
+                public void run() {
+                    for (String line : lines) {
+                        System.out.println("PARSING: " + line);
+                        parseProgramLine(line);
+                    }
+                }
+            }.start();
+        }
+    }
+    public static void parseProgramLine(String line) {
+        if (line.toLowerCase().startsWith("sleep")) {
             try {
                 Thread.sleep(Integer.parseInt(line.replace("sleep", "").trim()));
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
-        } else if (line.startsWith("setColor")) {
-            sendColor(line.replace("setColor", "").trim());
+        } else if (line.toLowerCase().startsWith("setcolor")) {
+            String[] parts = line.toLowerCase().replace("setcolor", "").split(" ");
+            if (parts.length == 1) {
+                sendColor(hexToRGB(parts[0])); //hex
+            } else {
+                sendColor(line.toLowerCase().replace("setcolor", "").trim());
+            }
+        } else if (line.toLowerCase().startsWith("strobe")) {
+            String[] parts = line.toLowerCase().replace("strobe ", "").split(" ");
+            //[0] colorA, [1] colorB, [2] timeBetweenThem, [3] numberOfTimes
+            String colorA = hexToRGB(parts[0]);
+            String colorB = hexToRGB(parts[1]);
+            int timeBetweenColors = Integer.parseInt(parts[2]);
+            int numberOfTimes = Integer.parseInt(parts[3]);
+
+            for (int i = 0; i < numberOfTimes; i++) {
+                try {
+                    sendColor(colorA);
+                    Thread.sleep(timeBetweenColors);
+                    sendColor(colorB);
+                    Thread.sleep(timeBetweenColors);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+        } else if (line.toLowerCase().startsWith("fade")) {
+            String[] parts = line.toLowerCase().replace("fade ", "").split(" ");
+            try {
+                fade(parts);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+                return;
+            }
+        } else if (line.toLowerCase().startsWith("hitfade")) {
+            String[] parts = line.toLowerCase().replace("hitfade ", "").split(" ");
+            String color = parts[0];
+            int time = Integer.parseInt(parts[1]);
+
+            try {
+                fade(new String[]{"0x000000", color, "" + Math.round(time * 0.1)});
+                fade(new String[]{color, "0x000000", "" + Math.round(time * 0.9)});
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+                return;
+            }
+            sendColor("000 000 000");
+        } else if (line.toLowerCase().startsWith("breathe")) {
+            String[] parts = line.toLowerCase().replace("breathe ", "").split(" ");
+
+            final String color = parts[0];
+            final int timeForFade;
+            final int totalTime;
+            final String colorB;
+
+            if (parts.length < 4) {
+                colorB = "0x000000";
+                timeForFade = Integer.parseInt(parts[1]);
+                totalTime = Integer.parseInt(parts[2]);
+            } else {
+                colorB = parts[1];
+                timeForFade = Integer.parseInt(parts[2]);
+                totalTime = Integer.parseInt(parts[3]);
+            }
+
+            Thread breatheThread = new Thread() {
+                @Override
+                public void run() {
+                    while(!Thread.interrupted()) {
+                        try {
+                            fade(new String[]{colorB, color, "" + timeForFade});
+                            fade(new String[]{color, colorB, "" + timeForFade});
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                            return;
+                        }
+                    }
+                }
+            };
+
+            breatheThread.start();
+            try {
+                Thread.sleep(totalTime);
+                if (breatheThread.isAlive()) {
+                    breatheThread.interrupt();
+                }
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+
+        }
+    }
+
+    public static Color colorXPercentBetweenTwoColors(Color colorA, Color colorB, double percent) {
+        int r = (int) Math.round((colorA.getRed() * percent) + (colorB.getRed() * (1 - percent)));
+        int g = (int) Math.round((colorA.getGreen() * percent + colorB.getGreen() * (1 - percent)));
+        int b = (int) Math.round((colorA.getBlue() * percent) + (colorB.getBlue() * (1 - percent)));
+        Color colorC = new Color(r, g, b);
+
+        //System.out.println(colorA.toString() + " + " + colorB.toString() + " = " + colorC.toString());
+        return colorC;
+    }
+
+    public static void fade(String[] parts) throws InterruptedException {
+        Color colorA = Color.decode(parts[0]);
+        Color colorB = Color.decode(parts[1]);
+        int time = Integer.parseInt(parts[2]);
+
+        int numOfCycles = 100;
+        if (time < 6000) {
+            numOfCycles = time / 80;
+        }
+
+        int timeBetweenCycles = (int) Math.round((double) time / numOfCycles);
+        double percentageOfColorA = 1;
+        for (int i = 0; i < numOfCycles; i++) {
+            sendColor(colorXPercentBetweenTwoColors(colorA, colorB, percentageOfColorA));
+            percentageOfColorA = percentageOfColorA - (1.0/numOfCycles);
+            Thread.sleep(timeBetweenCycles);
         }
     }
 }
