@@ -244,6 +244,15 @@ public class Main {
         output.flush();
     }
 
+    public static void setBackgroundLights(boolean on) {
+        if (on) {
+            output.print("bg on");
+        } else {
+            output.print("bg off");
+        }
+        output.flush();
+    }
+
     public static String colorToRGBString(Color color) {
         int r = color.getRed();
         int g = color.getGreen();
@@ -391,6 +400,12 @@ public class Main {
                 e.printStackTrace();
             }
 
+        } else if (line.toLowerCase().startsWith("bg")) {
+            if (line.equalsIgnoreCase("bg on")) {
+                setBackgroundLights(true);
+            } else {
+                setBackgroundLights(false);
+            }
         }
     }
 
