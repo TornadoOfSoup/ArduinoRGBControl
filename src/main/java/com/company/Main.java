@@ -9,6 +9,7 @@ import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.PrintWriter;
+import java.util.ArrayList;
 import java.util.Scanner;
 
 public class Main {
@@ -110,6 +111,7 @@ public class Main {
         port = ports[chosenPortIndex];
         if (port.openPort()) {
             System.out.println("Port opened");
+            port.setBaudRate(115200);
         } else {
             System.out.println("Error: port didn't open");
             System.exit(0);
@@ -269,7 +271,6 @@ public class Main {
                 public void run() {
                     while (true) {
                         for (String line : lines) {
-                            System.out.println("PARSING: " + line);
                             parseProgramLine(line);
                         }
                     }
@@ -285,7 +286,6 @@ public class Main {
                     int x = 0;
                     while (x < numOfTimes) {
                         for (String line : lines) {
-                            System.out.println("PARSING: " + line);
                             parseProgramLine(line);
                         }
                         x++;
@@ -297,14 +297,152 @@ public class Main {
                 @Override
                 public void run() {
                     for (String line : lines) {
-                        System.out.println("PARSING: " + line);
                         parseProgramLine(line);
                     }
                 }
             }.start();
         }
     }
+
+    public static void parseProgramBETA (final String[] lines) throws InterruptedException {
+        if (lines[0].trim().equalsIgnoreCase("loop")) {
+            System.out.println("looping");
+            new Thread() {
+                @Override
+                public void run() {
+                    while (true) {
+                        int i = 0;
+                        for (String line : lines) {
+                            if (i != 0 && line.toLowerCase().startsWith("loop")) {
+                                int endIndex = -1; //TODO this code is nasty, clean it up probably
+                                int numOfLoops = getNumberOfLoops(line);
+                                int sizeOfLoop;
+
+                                for (int j = i; j < lines.length; j++) { //find out how many lines are being looped
+                                    if (lines[j].equalsIgnoreCase("end")) {
+                                        endIndex = j;
+                                        break;
+                                    }
+                                }
+                                if (endIndex == -1) {
+                                    endIndex = lines.length - 1;
+                                }
+                                sizeOfLoop = endIndex - i;
+
+                                ArrayList<String> loop = new ArrayList<String>();
+                                for (int j = i; j < endIndex; j++) {
+                                    loop.add(lines[j]);
+                                }
+                                try {
+                                    for (int loops = 0; loops < numOfLoops; loops++) {
+                                        parseProgram((String[]) loop.toArray());
+                                    }
+                                } catch (InterruptedException e) {
+                                    e.printStackTrace();
+                                }
+                                i += sizeOfLoop;
+                            } else {
+                                parseProgramLine(line);
+                            }
+                            i++;
+                        }
+                    }
+                }
+            }.start();
+
+        } else if (lines[0].startsWith("loop")) { //TODO add a way to loop parts of the code
+            final int numOfTimes = Integer.parseInt(lines[0].replace("loop", "").trim());
+            System.out.println("looping " + numOfTimes + " times");
+            new Thread() {
+                @Override
+                public void run() {
+                    int x = 0;
+                    while (x < numOfTimes) {
+                        int i = 0;
+                        for (String line : lines) {
+                            if (i != 0 && line.toLowerCase().startsWith("loop")) {
+                                int endIndex = -1; //TODO this code is nasty, clean it up probably
+                                int numOfLoops = getNumberOfLoops(line);
+                                int sizeOfLoop;
+
+                                for (int j = i; j < lines.length; j++) { //find out how many lines are being looped
+                                    if (lines[j].equalsIgnoreCase("end")) {
+                                        endIndex = j;
+                                        break;
+                                    }
+                                }
+                                if (endIndex == -1) {
+                                    endIndex = lines.length - 1;
+                                }
+                                sizeOfLoop = endIndex - i;
+
+                                ArrayList<String> loop = new ArrayList<String>();
+                                for (int j = i; j < endIndex; j++) {
+                                    loop.add(lines[j]);
+                                }
+                                try {
+                                    for (int loops = 0; loops < numOfLoops; loops++) {
+                                        parseProgram((String[]) loop.toArray());
+                                    }
+                                } catch (InterruptedException e) {
+                                    e.printStackTrace();
+                                }
+                                i += sizeOfLoop;
+                            } else {
+                                parseProgramLine(line);
+                            }
+                            i++;
+                        }
+                        x++;
+                    }
+                }
+            }.start();
+        } else {
+            new Thread() {
+                @Override
+                public void run() {
+                    int i = 0;
+                    for (String line : lines) {
+                        if (i != 0 && line.toLowerCase().startsWith("loop")) {
+                            int endIndex = -1; //TODO this code is nasty, clean it up probably
+                            int numOfLoops = getNumberOfLoops(line);
+                            int sizeOfLoop;
+
+                            for (int j = i; j < lines.length; j++) { //find out how many lines are being looped
+                                if (lines[j].equalsIgnoreCase("end")) {
+                                    endIndex = j;
+                                    break;
+                                }
+                            }
+                            if (endIndex == -1) {
+                                endIndex = lines.length - 1;
+                            }
+                            sizeOfLoop = endIndex - i;
+
+                            ArrayList<String> loop = new ArrayList<String>();
+                            for (int j = i + 1; j < endIndex; j++) {
+                                loop.add(lines[j]);
+                            }
+                            try {
+                                for (int loops = 0; loops < numOfLoops; loops++) {
+                                    parseProgram(loop.toArray(new String[sizeOfLoop]));
+                                }
+                            } catch (InterruptedException e) {
+                                e.printStackTrace();
+                            }
+                            i += sizeOfLoop;
+                        } else {
+                            parseProgramLine(line);
+                        }
+                        i++;
+                    }
+                }
+            }.start();
+        }
+    }
     public static void parseProgramLine(String line) {
+        System.out.println("PARSING: " + line);
+
         if (line.toLowerCase().startsWith("sleep")) {
             try {
                 Thread.sleep(Integer.parseInt(line.replace("sleep", "").trim()));
@@ -435,6 +573,20 @@ public class Main {
             sendColor(colorXPercentBetweenTwoColors(colorA, colorB, percentageOfColorA));
             percentageOfColorA = percentageOfColorA - (1.0/numOfCycles);
             Thread.sleep(timeBetweenCycles);
+        }
+    }
+
+    /**
+     * A helper method to clean up the looping code
+     * @param line
+     * @return
+     */
+    public static int getNumberOfLoops(String line) {
+        if (line.equalsIgnoreCase("loop")) { //figure out how many loops
+            return Integer.MAX_VALUE;
+        }
+        else {
+            return Integer.parseInt(line.toLowerCase().replace("loop ", ""));
         }
     }
 }
