@@ -255,6 +255,15 @@ public class Main {
         output.flush();
     }
 
+    public static void setBackgroundLights(int brightness) {
+        if (brightness < 0 || brightness > 255) {
+            throw new IllegalArgumentException("Number " + brightness + " out of range 0-255");
+        } else {
+            output.print("bg " + brightness);
+            output.flush();
+        }
+    }
+
     public static String colorToRGBString(Color color) {
         int r = color.getRed();
         int g = color.getGreen();
@@ -457,24 +466,40 @@ public class Main {
                 sendColor(line.toLowerCase().replace("setcolor", "").trim());
             }
         } else if (line.toLowerCase().startsWith("strobe")) {
-            String[] parts = line.toLowerCase().replace("strobe ", "").split(" ");
-            //[0] colorA, [1] colorB, [2] timeBetweenThem, [3] numberOfTimes
-            String colorA = hexToRGB(parts[0]);
-            String colorB = hexToRGB(parts[1]);
-            int timeBetweenColors = Integer.parseInt(parts[2]);
-            int numberOfTimes = Integer.parseInt(parts[3]);
+            if (line.toLowerCase().startsWith("strobe bg")) {
+                String[] parts = line.toLowerCase().replace("strobe bg ", "").split(" ");
+                int timeBetweenColors = Integer.parseInt(parts[0]);
+                int numberOfTimes = Integer.parseInt(parts[1]);
+                for (int i = 0; i < numberOfTimes; i++) {
+                    try {
+                        setBackgroundLights(true);
+                        Thread.sleep(timeBetweenColors);
+                        setBackgroundLights(false);
+                        Thread.sleep(timeBetweenColors);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                }
+            } else {
+                String[] parts = line.toLowerCase().replace("strobe ", "").split(" ");
+                //[0] colorA, [1] colorB, [2] timeBetweenThem, [3] numberOfTimes
+                String colorA = hexToRGB(parts[0]);
+                String colorB = hexToRGB(parts[1]);
+                int timeBetweenColors = Integer.parseInt(parts[2]);
+                int numberOfTimes = Integer.parseInt(parts[3]);
 
-            for (int i = 0; i < numberOfTimes; i++) {
-                try {
-                    sendColor(colorA);
-                    Thread.sleep(timeBetweenColors);
-                    sendColor(colorB);
-                    Thread.sleep(timeBetweenColors);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
+                for (int i = 0; i < numberOfTimes; i++) {
+                    try {
+                        sendColor(colorA);
+                        Thread.sleep(timeBetweenColors);
+                        sendColor(colorB);
+                        Thread.sleep(timeBetweenColors);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
                 }
             }
-        } else if (line.toLowerCase().startsWith("fade")) {
+        } else if (line.toLowerCase().startsWith("fade") && !line.toLowerCase().startsWith("fadebg")) {
             String[] parts = line.toLowerCase().replace("fade ", "").split(" ");
             try {
                 fade(parts);
@@ -482,7 +507,16 @@ public class Main {
                 e.printStackTrace();
                 return;
             }
-        } else if (line.toLowerCase().startsWith("hitfade")) {
+
+        } else if (line.toLowerCase().startsWith("fadebg")) {
+            String[] parts = line.toLowerCase().replace("fadebg ", "").split(" ");
+            try {
+                fadeBg(parts);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+                return;
+            }
+        } else if (line.toLowerCase().startsWith("hitfade") && !line.toLowerCase().startsWith("hitfadebg")) {
             String[] parts = line.toLowerCase().replace("hitfade ", "").split(" ");
             String color = parts[0];
             int time = Integer.parseInt(parts[1]);
@@ -495,7 +529,20 @@ public class Main {
                 return;
             }
             sendColor("000 000 000");
-        } else if (line.toLowerCase().startsWith("breathe")) {
+        } else if (line.toLowerCase().startsWith("hitfadebg")) {
+            String[] parts = line.toLowerCase().replace("hitfadebg ", "").split(" ");
+            int brightness = Integer.parseInt(parts[0]);
+            int time = Integer.parseInt(parts[1]);
+
+            try {
+                fadeBg(new String[]{"" + 0, "" + brightness, "" + Math.round(time * 0.1)});
+                fadeBg(new String[]{"" + brightness, "" + 0, "" + Math.round(time * 0.9)});
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+                return;
+            }
+            setBackgroundLights(false);
+        } else if (line.toLowerCase().startsWith("breathe") && !line.toLowerCase().startsWith("breathebg")) {
             String[] parts = line.toLowerCase().replace("breathe ", "").split(" ");
 
             final String color = parts[0];
@@ -538,11 +585,57 @@ public class Main {
                 e.printStackTrace();
             }
 
+        } else if (line.toLowerCase().startsWith("breathebg")) {
+            String[] parts = line.toLowerCase().replace("breathebg ", "").split(" ");
+
+            final String brightness = parts[0];
+            final int timeForFade;
+            final int totalTime;
+            final String brightnessB;
+
+            if (parts.length < 4) {
+                brightnessB = "0";
+                timeForFade = Integer.parseInt(parts[1]);
+                totalTime = Integer.parseInt(parts[2]);
+            } else {
+                brightnessB = parts[1];
+                timeForFade = Integer.parseInt(parts[2]);
+                totalTime = Integer.parseInt(parts[3]);
+            }
+
+            Thread breatheBgThread = new Thread() {
+                @Override
+                public void run() {
+                    while(!Thread.interrupted()) {
+                        try {
+                            fadeBg(new String[]{brightnessB, brightness, "" + timeForFade});
+                            fadeBg(new String[]{brightness, brightnessB, "" + timeForFade});
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                            return;
+                        }
+                    }
+                }
+            };
+
+            breatheBgThread.start();
+            try {
+                Thread.sleep(totalTime);
+                if (breatheBgThread.isAlive()) {
+                    breatheBgThread.interrupt();
+                }
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+
         } else if (line.toLowerCase().startsWith("bg")) {
             if (line.equalsIgnoreCase("bg on")) {
                 setBackgroundLights(true);
-            } else {
+            } else if (line.equalsIgnoreCase("bg off")) {
                 setBackgroundLights(false);
+            } else {
+                int brightness = Integer.parseInt(line.replace("bg ", ""));
+                setBackgroundLights(brightness);
             }
         }
     }
@@ -572,6 +665,27 @@ public class Main {
         for (int i = 0; i < numOfCycles; i++) {
             sendColor(colorXPercentBetweenTwoColors(colorA, colorB, percentageOfColorA));
             percentageOfColorA = percentageOfColorA - (1.0/numOfCycles);
+            Thread.sleep(timeBetweenCycles);
+        }
+    }
+
+    public static void fadeBg(String[] parts) throws InterruptedException {
+        int brightnessA = Integer.parseInt(parts[0]);
+        int brightnessB = Integer.parseInt(parts[1]);
+        int difference = Math.abs(brightnessA - brightnessB);
+        int time = Integer.parseInt(parts[2]);
+
+        int numOfCycles = 100;
+        if (time < 6000) {
+            numOfCycles = time / 80;
+        }
+
+        int timeBetweenCycles = (int) Math.round((double) time / numOfCycles);
+        double percentageOfBrightnessA = 1.0;
+        for (int i = 0; i < numOfCycles; i++) {
+            //setBackgroundLights((int) Math.round(difference * percentageOfBrightnessA + Math.min(brightnessA, brightnessB)));
+            setBackgroundLights((int) Math.round((brightnessA * percentageOfBrightnessA) + (brightnessB * (1 - percentageOfBrightnessA))));
+            percentageOfBrightnessA = percentageOfBrightnessA - (1.0 / numOfCycles);
             Thread.sleep(timeBetweenCycles);
         }
     }
